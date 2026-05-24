@@ -73,6 +73,11 @@ with st.form("rehab_form", clear_on_submit=True):
         bp_diastolic = st.number_input("血壓-舒張壓 (mmHg)", min_value=30, max_value=150, value=80)
         pulse = st.number_input("脈搏 (次/分)", min_value=30, max_value=200, value=75)
         spo2 = st.number_input("血氧 (%)", min_value=50, max_value=100, value=98)
+        
+        st.markdown("---")
+        st.markdown("**⚙️ 系統設定項目**")
+        # 新增需求 1：網頁增加「設定次數」輸入框
+        setup_count = st.number_input("設定次數", min_value=1, max_value=50, value=1)
 
     with col2:
         st.markdown("**📋 復能項目紀錄 (請輸入完成次數)**")
@@ -105,14 +110,15 @@ if submit_btn:
     if not SHEET_API_URL or "sheetdb.io" not in SHEET_API_URL:
         st.error("⚠️ 請確認 Streamlit 後台 Secrets 有正確填入 sheetdb 網址！")
     else:
-        # 打包成符合 SheetDB 要求的 JSON 格式
+        # 打包成符合 SheetDB 要求的 JSON 格式，並將網頁與 Excel 欄位名稱對接
         payload = {
             "data": [{
                 "日期": date_str,
                 "個案": f"{selected_id} - {selected_name}",
                 "收縮壓": bp_systolic,
+                "舒張壓": bp_diastolic,  # 新增需求 2：對接 Excel 的「舒張壓」欄位
                 "血氧": spo2,
-                "組數": 1,
+                "設定次數": setup_count,  # 新增需求 1：對接 Excel 的「設定次數」欄位
                 "坐姿抬腿": ex1, "坐姿踩腳踏車": ex2, "坐姿腿開合": ex3, "坐姿踢腿": ex4, "椅子深蹲": ex5, "坐姿v型腿上舉": ex6,
                 "腿開合機": ex7, "踢腿機": ex8, "腿推機": ex9, "划船機": ex10, "肩推機": ex11, "蝴蝶機": ex12,
                 "執行評值": evaluation,
@@ -121,7 +127,6 @@ if submit_btn:
             }]
         }
         
-        # 核心分流：透過網址參數 ?sheet=機構名稱 告訴 SheetDB 該寫入哪一個分頁
         target_url = f"{SHEET_API_URL}?sheet={location}"
         
         with st.spinner("正在安全傳送紀錄至雲端..."):
@@ -129,8 +134,8 @@ if submit_btn:
                 headers = {"Content-Type": "application/json"}
                 response = requests.post(target_url, data=json.dumps(payload), headers=headers, timeout=10)
                 if response.status_code == 21 or response.status_code == 201 or response.status_code == 200:
-                    st.success(f"🎉 狂賀通車！【{location} - {selected_name}】的紀錄已成功寫入 Google 試算表！")
+                    st.success(f"🎉 成功！【{location} - {selected_name}】的全新欄位紀錄已完美寫入 Google 試算表！")
                 else:
-                    st.error(f"❌ 傳送失敗，錯誤碼: {response.status_code}，請檢查 Secrets 網址。")
+                    st.error(f"❌ 傳送失敗，錯誤碼: {response.status_code}，請確認試算表內標題字樣是否與程式對齊。")
             except Exception as e:
                 st.error(f"❌ 連線異常: {str(e)}")
