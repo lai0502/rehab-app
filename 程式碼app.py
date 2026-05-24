@@ -7,17 +7,11 @@ from datetime import datetime
 # 設定網頁標題與排版
 st.set_page_config(page_title="個案復能訓練紀錄系統-官方雲端版", layout="wide")
 
-# ================= 🛡️ 安全性改裝：從雲端保險箱讀取網址 =================
+# 安全性改裝：從雲端保險箱讀取網址
 try:
     SHEET_API_URL = st.secrets["api_url"]
 except:
-    SHEET_API_URL = "尚未設定雲端保險箱網址"
-
-SHEET_API_URLS = {
-    "同心園": SHEET_API_URL,
-    "大願如來": SHEET_API_URL
-}
-# =========================================================================
+    SHEET_API_URL = ""
 
 # 初始化兩家機構的正確學員名單
 if 'dayuan_db' not in st.session_state:
@@ -52,22 +46,6 @@ if 'tongxin_db' not in st.session_state:
         {"id": "11401026", "name": "温貴妹"}
     ]
 
-# 輔助函式：發送資料到 Google Sheet
-def send_to_google_sheet(api_url, payload):
-    try:
-        headers = {"Content-Type": "application/json"}
-        response = requests.post(api_url, data=json.dumps(payload), headers=headers, timeout=10)
-        if response.status_code == 200:
-            res_json = response.json()
-            if res_json.get("status") == "success":
-                return True, "資料成功寫入 Google 試算表！"
-            else:
-                return False, f"試算表後端錯誤: {res_json.get('message')}"
-        else:
-            return False, f"連線失敗，HTTP 狀態碼: {response.status_code}"
-    except Exception as e:
-        return False, f"連線發生異常: {str(e)}"
-
 # 介面標題
 st.title("🏋️ 個案復能訓練紀錄系統")
 st.write("填寫完成後按「送出紀錄」，資料將自動同步至對應機構的 Google 試算表。")
@@ -76,10 +54,7 @@ st.write("填寫完成後按「送出紀錄」，資料將自動同步至對應�
 location = st.selectbox("請選擇服務機構", ["大願如來", "同心園"])
 
 # 根據選擇的機構，自動帶出不同的學員名單
-if location == "大願如來":
-    current_db = st.session_state.dayuan_db
-else:
-    current_db = st.session_state.tongxin_db
+current_db = st.session_state.dayuan_db if location == "大願如來" else st.session_state.tongxin_db
 
 # 表單開始
 with st.form("rehab_form", clear_on_submit=True):
@@ -90,7 +65,6 @@ with st.form("rehab_form", clear_on_submit=True):
         member_options = [f"{m['id']} - {m['name']}" for m in current_db]
         selected_member = st.selectbox("學員姓名 (序號)", member_options)
         
-        # 拆分序號與姓名
         selected_id = selected_member.split(" - ")[0]
         selected_name = selected_member.split(" - ")[1]
         
@@ -124,37 +98,39 @@ with st.form("rehab_form", clear_on_submit=True):
         
         note = st.text_input("備註說明", "")
 
-    # 提交按鈕
     submit_btn = st.form_submit_button("送出紀錄")
 
 # 當按下送出
 if submit_btn:
-    current_api = SHEET_API_URLS.get(location)
-    
-    if not current_api or "https" not in current_api:
-        st.error("⚠️ 偵測到雲端保險箱未設定或設定錯誤，請確認 Streamlit 後台的 Secrets 有填入 api_url！")
+    if not SHEET_API_URL or "sheetdb.io" not in SHEET_API_URL:
+        st.error("⚠️ 請確認 Streamlit 後台 Secrets 有正確填入 sheetdb 網址！")
     else:
-        # 打包資料
+        # 打包成符合 SheetDB 要求的 JSON 格式
         payload = {
-            "location": location,
-            "id": selected_id,
-            "name": selected_name,
-            "date": date_str,
-            "bp_systolic": bp_systolic,
-            "bp_diastolic": bp_diastolic,
-            "pulse": pulse,
-            "spo2": spo2,
-            "ex1": ex1, "ex2": ex2, "ex3": ex3, "ex4": ex4, "ex5": ex5, "ex6": ex6,
-            "ex7": ex7, "ex8": ex8, "ex9": ex9, "ex10": ex10, "ex11": ex11, "ex12": ex12,
-            "evaluation": evaluation,
-            "rpe": rpe,
-            "note": note
+            "data": [{
+                "日期": date_str,
+                "個案": f"{selected_id} - {selected_name}",
+                "收縮壓": bp_systolic,
+                "血氧": spo2,
+                "組數": 1,
+                "坐姿抬腿": ex1, "坐姿踩腳踏車": ex2, "坐姿腿開合": ex3, "坐姿踢腿": ex4, "椅子深蹲": ex5, "坐姿v型腿上舉": ex6,
+                "腿開合機": ex7, "踢腿機": ex8, "腿推機": ex9, "划船機": ex10, "肩推機": ex11, "蝴蝶機": ex12,
+                "執行評值": evaluation,
+                "RPE": rpe,
+                "其他說明": note
+            }]
         }
         
-        with st.spinner("正在將資料上傳至雲端試算表..."):
-            # 修正處：正確傳入 current_api 與 payload 兩個參數
-            success, msg = send_to_google_sheet(current_api, payload)
-            if success:
-                st.success(f"🎉 成功！【{location} - {selected_name}】的復能紀錄已穩穩寫入試算表！")
-            else:
-                st.error(f"❌ 傳送失敗：{msg}")
+        # 核心分流：透過網址參數 ?sheet=機構名稱 告訴 SheetDB 該寫入哪一個分頁
+        target_url = f"{SHEET_API_URL}?sheet={location}"
+        
+        with st.spinner("正在安全傳送紀錄至雲端..."):
+            try:
+                headers = {"Content-Type": "application/json"}
+                response = requests.post(target_url, data=json.dumps(payload), headers=headers, timeout=10)
+                if response.status_code == 21 or response.status_code == 201 or response.status_code == 200:
+                    st.success(f"🎉 狂賀通車！【{location} - {selected_name}】的紀錄已成功寫入 Google 試算表！")
+                else:
+                    st.error(f"❌ 傳送失敗，錯誤碼: {response.status_code}，請檢查 Secrets 網址。")
+            except Exception as e:
+                st.error(f"❌ 連線異常: {str(e)}")
