@@ -71,13 +71,24 @@ with st.form("rehab_form", clear_on_submit=True):
         date_str = st.date_input("日期", datetime.today()).strftime("%Y/%m/%d")
         bp_systolic = st.number_input("血壓-收縮壓 (mmHg)", min_value=50, max_value=250, value=120)
         bp_diastolic = st.number_input("血壓-舒張壓 (mmHg)", min_value=30, max_value=150, value=80)
-        pulse = st.number_input("脈搏 (次/分)", min_value=30, max_value=200, value=75)
         spo2 = st.number_input("血氧 (%)", min_value=50, max_value=100, value=98)
+        # 💡 已成功移除「脈搏」項目
         
         st.markdown("---")
-        st.markdown("**⚙️ 系統設定項目**")
-        # 新增需求 1：網頁增加「設定次數」輸入框
+        st.markdown("**⚙️ 系統設定與阻力項目**")
         setup_count = st.number_input("設定次數", min_value=1, max_value=50, value=1)
+        
+        # 💡 增加「徒手訓練阻力」（預設選項 + 可自由填寫）
+        resistance_options = ["無", "彈力帶", "沙袋", "自訂輸入..."]
+        selected_res = st.selectbox("徒手訓練阻力", resistance_options)
+        if selected_res == "自訂輸入...":
+            free_res_text = st.text_input("請輸入自訂徒手阻力說明", value="")
+            manual_resistance = free_res_text
+        else:
+            manual_resistance = selected_res
+            
+        # 💡 增加「器材訓練阻力」（數字填入）
+        machine_resistance = st.number_input("器材訓練阻力", min_value=0, max_value=200, value=0)
 
     with col2:
         st.markdown("**📋 復能項目紀錄 (請輸入完成次數)**")
@@ -110,15 +121,17 @@ if submit_btn:
     if not SHEET_API_URL or "sheetdb.io" not in SHEET_API_URL:
         st.error("⚠️ 請確認 Streamlit 後台 Secrets 有正確填入 sheetdb 網址！")
     else:
-        # 打包成符合 SheetDB 要求的 JSON 格式，並將網頁與 Excel 欄位名稱對接
+        # 打包成符合 SheetDB 要求的 JSON 格式，完全精準對齊您的試算表欄位名稱
         payload = {
             "data": [{
                 "日期": date_str,
                 "個案": f"{selected_id} - {selected_name}",
                 "收縮壓": bp_systolic,
-                "舒張壓": bp_diastolic,  # 新增需求 2：對接 Excel 的「舒張壓」欄位
+                "舒張壓": bp_diastolic,
                 "血氧": spo2,
-                "設定次數": setup_count,  # 新增需求 1：對接 Excel 的「設定次數」欄位
+                "設定次數": setup_count,
+                "椅子訓練阻力": manual_resistance,    # 精準對齊：椅子訓練阻力
+                "器材訓練阻力": machine_resistance, # 精準對齊：器材訓練阻力
                 "坐姿抬腿": ex1, "坐姿踩腳踏車": ex2, "坐姿腿開合": ex3, "坐姿踢腿": ex4, "椅子深蹲": ex5, "坐姿v型腿上舉": ex6,
                 "腿開合機": ex7, "踢腿機": ex8, "腿推機": ex9, "划船機": ex10, "肩推機": ex11, "蝴蝶機": ex12,
                 "執行評值": evaluation,
@@ -133,8 +146,8 @@ if submit_btn:
             try:
                 headers = {"Content-Type": "application/json"}
                 response = requests.post(target_url, data=json.dumps(payload), headers=headers, timeout=10)
-                if response.status_code == 21 or response.status_code == 201 or response.status_code == 200:
-                    st.success(f"🎉 成功！【{location} - {selected_name}】的全新欄位紀錄已完美寫入 Google 試算表！")
+                if response.status_code in [200, 201, 21]:
+                    st.success(f"🎉 成功！【{location} - {selected_name}】的全新阻力紀錄已完美寫入 Google 試算表！")
                 else:
                     st.error(f"❌ 傳送失敗，錯誤碼: {response.status_code}，請確認試算表內標題字樣是否與程式對齊。")
             except Exception as e:
